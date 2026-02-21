@@ -186,10 +186,15 @@ export const UniCompRenderer: React.FC<UniCompRendererProps> = ({
         const newW = Math.min(100, oldW + expandLeft + expandRight);
         const newH = Math.min(100, newSpec.gridHeight + expandTop + expandBottom);
         
-        newSpec.symbols = newSpec.symbols.map((s, idx) => {
+        newSpec.symbols = newSpec.symbols.map((s, symIdx) => {
           const r = getRect(s.start, s.end, oldW);
-          const shiftX = selectionSet.includes(idx) ? expandLeft : expandLeft;
-          const shiftY = selectionSet.includes(idx) ? expandTop : expandTop;
+          const isSelected = selectionSet.includes(symIdx);
+          
+          // Non-selected symbols (including locked/hidden) shift with grid expansion
+          // Selected symbols also shift their anchor point, but their movement/scale
+          // will be applied afterwards, creating the visual effect of moving left/up
+          const shiftX = expandLeft;
+          const shiftY = expandTop;
           
           return {
             ...s,

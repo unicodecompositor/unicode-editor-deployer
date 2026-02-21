@@ -18,7 +18,6 @@ function resolveColor(color: string | undefined, fallback: string): string {
   return color;
 }
 
-// Draw spec onto a canvas context (shared logic for preview and export)
 function drawSpecOnCanvas(
   ctx: CanvasRenderingContext2D,
   spec: UniCompSpec,
@@ -67,6 +66,75 @@ function drawSpecOnCanvas(
   });
 }
 
+// Background grid component that extends beyond the editor canvas
+const BackgroundGrid: React.FC<{
+  spec: UniCompSpec | null;
+  containerSize: number;
+}> = ({ spec, containerSize }) => {
+  const bgCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  React.useEffect(() => {
+    const canvas = bgCanvasRef.current;
+    if (!canvas || !spec) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const gridWidth = spec.gridWidth;
+    const gridHeight = spec.gridHeight;
+    const cellSize = Math.min(containerSize / gridWidth, containerSize / gridHeight);
+    
+    // Fill the entire viewport
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = vw * dpr;
+    canvas.height = vh * dpr;
+    canvas.style.width = `${vw}px`;
+    canvas.style.height = `${vh}px`;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, vw, vh);
+
+    // Calculate where the editor canvas is centered
+    const editorW = cellSize * gridWidth;
+    const editorH = cellSize * gridHeight;
+    const offsetX = (vw - editorW) / 2;
+    const offsetY = (vh - editorH) / 2;
+
+    // Draw grid lines extending across the whole viewport using the same cell size
+    ctx.strokeStyle = 'hsl(220, 15%, 15%)';
+    ctx.lineWidth = 0.5;
+
+    // Vertical lines
+    const startGridX = offsetX % cellSize;
+    for (let x = startGridX; x < vw; x += cellSize) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, vh);
+      ctx.stroke();
+    }
+
+    // Horizontal lines
+    const startGridY = offsetY % cellSize;
+    for (let y = startGridY; y < vh; y += cellSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(vw, y);
+      ctx.stroke();
+    }
+  }, [spec, containerSize]);
+
+  if (!spec) return null;
+
+  return (
+    <canvas
+      ref={bgCanvasRef}
+      className="fixed inset-0 z-0 pointer-events-none"
+      style={{ top: 0, left: 0 }}
+    />
+  );
+};
+
 interface GridVisualizationPanelProps {
   spec: UniCompSpec | null;
   deferredSpec: UniCompSpec | null;
@@ -83,10 +151,10 @@ interface GridVisualizationPanelProps {
   onUpdateCode: (code: string, isFinal: boolean) => void;
   onTripleTapEmpty: () => void;
   angleStep: number;
-  // For fullscreen mode we pass extra toolbar content
   extraToolbar?: React.ReactNode;
   canvasContainerRef?: React.RefObject<HTMLDivElement>;
   layoutMode?: 'normal' | 'split' | 'fullscreen';
+  fullscreenViewMode?: 'edit' | 'preview';
 }
 
 export const GridVisualizationPanel: React.FC<GridVisualizationPanelProps> = ({
@@ -108,13 +176,19 @@ export const GridVisualizationPanel: React.FC<GridVisualizationPanelProps> = ({
   extraToolbar,
   canvasContainerRef,
   layoutMode = 'normal',
+  fullscreenViewMode,
 }) => {
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit');
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
+
+  // In fullscreen mode, use the externally controlled view mode
+  const effectiveViewMode = layoutMode === 'fullscreen' ? (fullscreenViewMode || 'edit') : viewMode;
+  const isFullscreen = layoutMode === 'fullscreen';
 
   // Draw result preview into canvas
   React.useEffect(() => {
-    if (viewMode !== 'preview') return;
+    if (effectiveViewMode !== 'preview') return;
     const canvas = previewCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -128,6 +202,25 @@ export const GridVisualizationPanel: React.FC<GridVisualizationPanelProps> = ({
       const ratio = specToRender.gridWidth / specToRender.gridHeight;
       if (ratio > 1) canvasH = containerSize / ratio;
       else canvasW = containerSize * ratio;
+    }
+
+    // In fullscreen, use larger canvas
+    if (isFullscreen) {
+      const maxW = window.innerWidth * 0.85;
+      const maxH = (window.innerHeight - 80) * 0.85;
+      if (specToRender) {
+        const ratio = specToRender.gridWidth / specToRender.gridHeight;
+        if (ratio > 1) {
+          canvasW = Math.min(maxW, maxH * ratio);
+          canvasH = canvasW / ratio;
+        } else {
+          canvasH = Math.min(maxH, maxW / ratio);
+          canvasW = canvasH * ratio;
+        }
+      } else {
+        canvasW = Math.min(maxW, maxH);
+        canvasH = canvasW;
+      }
     }
 
     const dpr = window.devicePixelRatio || 1;
@@ -148,7 +241,7 @@ export const GridVisualizationPanel: React.FC<GridVisualizationPanelProps> = ({
     }
 
     drawSpecOnCanvas(ctx, specToRender, canvasW, canvasH);
-  }, [viewMode, deferredSpec, containerSize]);
+  }, [effectiveViewMode, deferredSpec, containerSize, isFullscreen]);
 
   const handleExport = () => {
     const specToExport = deferredSpec;
@@ -166,7 +259,6 @@ export const GridVisualizationPanel: React.FC<GridVisualizationPanelProps> = ({
     ctx.clearRect(0, 0, W, H);
     drawSpecOnCanvas(ctx, specToExport, W, H);
 
-    // Build exportable HTML
     const raw = specToExport.raw || '';
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -237,6 +329,51 @@ export const GridVisualizationPanel: React.FC<GridVisualizationPanelProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  // In fullscreen, don't show internal header/controls — they're in the floating toolbar
+  if (isFullscreen) {
+    return (
+      <div className="flex flex-col items-center justify-center w-full h-full relative" ref={canvasContainerRef}>
+        {/* Background grid extending beyond the editor */}
+        <BackgroundGrid spec={spec} containerSize={containerSize} />
+        
+        {/* Hidden export button for fullscreen toolbar */}
+        <button
+          ref={exportButtonRef}
+          data-grid-viz-export
+          className="hidden"
+          onClick={handleExport}
+        />
+
+        {effectiveViewMode === 'edit' ? (
+          <div className="relative z-10">
+            <UniCompRenderer
+              spec={spec}
+              showGrid={showGrid}
+              showIndices={showIndices}
+              size={containerSize}
+              selectionSet={selectionSet}
+              lockedSet={lockedSet}
+              hiddenSet={hiddenSet}
+              onCellDoubleClick={onCellDoubleClick}
+              onUpdateCode={onUpdateCode}
+              onTripleTapEmpty={onTripleTapEmpty}
+              angleStep={angleStep}
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center relative z-10">
+            {deferredSpec && deferredSpec.symbols.length > 0 ? (
+              <canvas ref={previewCanvasRef} className="rounded-lg" />
+            ) : (
+              <span className="text-muted-foreground text-sm">No result to preview</span>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Normal/Split mode — original UI with header
   const displayToggles = (
     <>
       <Button
