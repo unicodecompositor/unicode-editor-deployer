@@ -9,7 +9,8 @@ import { GridVisualizationPanel } from '@/components/GridVisualizationPanel';
 import { BlockSelector } from '@/components/BlockSelector';
 import { parseUniComp, parseMultiLine, getRect, stringifySpec } from '@/lib/unicomp-parser';
 import { useLocaleProvider } from '@/hooks/useLocale';
-import { Layers, PanelRightClose, PanelRightOpen, LayoutGrid } from 'lucide-react';
+import { useHistory } from '@/hooks/useHistory';
+import { Layers, PanelRightClose, PanelRightOpen, LayoutGrid, Grid, Hash, Eye, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -18,7 +19,8 @@ const DEFAULT_CODE = '(30×15):H5-98;"2"67-99;C8-101;—11-104;C14-107;H16-109;"
 type LayoutMode = 'normal' | 'split' | 'fullscreen';
 
 const IndexContent: React.FC = () => {
-  const [code, setCode] = useState(DEFAULT_CODE);
+  const history = useHistory(DEFAULT_CODE);
+  const code = history.current;
   const [deferredCode, setDeferredCode] = useState(DEFAULT_CODE);
   const [showGrid, setShowGrid] = useState(true);
   const [showIndices, setShowIndices] = useState(false);
@@ -27,6 +29,7 @@ const IndexContent: React.FC = () => {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('normal');
   const [specPanelVisible, setSpecPanelVisible] = useState(true);
   const [angleStep, setAngleStep] = useState(10);
+  const [fullscreenViewMode, setFullscreenViewMode] = useState<'edit' | 'preview'>('edit');
 
   const [selectionSet, setSelectionSet] = useState<number[]>([]);
   const [lockedSet, setLockedSet] = useState<number[]>([]);
@@ -38,11 +41,47 @@ const IndexContent: React.FC = () => {
     setHiddenSet([]);
   }, []);
 
+  const setCode = useCallback((val: string) => {
+    history.push(val);
+  }, [history]);
+
   const handleCodeChange = useCallback((val: string) => {
-    setCode(val);
+    history.push(val);
     setDeferredCode(val);
     resetAllSets();
-  }, [resetAllSets]);
+  }, [history, resetAllSets]);
+
+  const handleUndo = useCallback(() => {
+    const val = history.undo();
+    if (val !== null) {
+      setDeferredCode(val);
+      resetAllSets();
+    }
+  }, [history, resetAllSets]);
+
+  const handleRedo = useCallback(() => {
+    const val = history.redo();
+    if (val !== null) {
+      setDeferredCode(val);
+      resetAllSets();
+    }
+  }, [history, resetAllSets]);
+
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleUndo, handleRedo]);
 
   const canvasContainerRef = useRef<HTMLDivElement>(null);
 
@@ -90,7 +129,7 @@ const IndexContent: React.FC = () => {
 
     setCode(newRuleCode);
     if (isFinal) setDeferredCode(newRuleCode);
-  }, [code, multiLineResult, selectedBlockIndex]);
+  }, [code, multiLineResult, selectedBlockIndex, setCode]);
 
   const toggleSelection = useCallback((index: number) => {
     if (lockedSet.includes(index)) return;
@@ -150,6 +189,7 @@ const IndexContent: React.FC = () => {
     setLayoutMode(prev => {
       if (prev === 'normal') return 'split';
       if (prev === 'split') { setSpecPanelVisible(true); return 'fullscreen'; }
+      setFullscreenViewMode('edit');
       return 'normal';
     });
   }, []);
@@ -203,7 +243,7 @@ const IndexContent: React.FC = () => {
   if (layoutMode === 'normal') {
     return (
       <div className="min-h-screen bg-background">
-        <Header />
+        <Header canUndo={history.canUndo} canRedo={history.canRedo} onUndo={handleUndo} onRedo={handleRedo} />
         <main className="container mx-auto px-4 py-8">
           <div className="grid gap-6 grid-cols-1 lg:grid-cols-12">
             {/* Left Column: Editor & Presets */}
@@ -224,7 +264,7 @@ const IndexContent: React.FC = () => {
               </div>
             </div>
 
-            {/* Middle Column: Grid Visualization (with embedded result preview toggle) */}
+            {/* Middle Column: Grid Visualization */}
             <div className="lg:col-span-5">
               <div className="panel flex flex-col items-center relative min-h-[400px]">
                 {gridPanel('normal')}
@@ -247,7 +287,7 @@ const IndexContent: React.FC = () => {
   if (layoutMode === 'split') {
     return (
       <div className="min-h-screen bg-background">
-        <Header />
+        <Header canUndo={history.canUndo} canRedo={history.canRedo} onUndo={handleUndo} onRedo={handleRedo} />
         <main className="container mx-auto px-4 py-4">
           <div className={cn(
             "grid gap-4",
@@ -306,19 +346,18 @@ const IndexContent: React.FC = () => {
   }
 
   // --- FULLSCREEN MODE ---
+  // Handle export in fullscreen
+  const handleFullscreenExport = () => {
+    const gridVizRef = document.querySelector('[data-grid-viz-export]');
+    if (gridVizRef) (gridVizRef as HTMLButtonElement).click();
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Header />
-      {/* Floating toolbar top-right under header */}
+      <Header canUndo={history.canUndo} canRedo={history.canRedo} onUndo={handleUndo} onRedo={handleRedo} />
+      {/* Floating toolbar top-right under header — all 6 buttons */}
       <div className="fixed top-16 right-4 z-40 flex items-center gap-1 bg-card/80 backdrop-blur-sm rounded-lg border border-border p-1 shadow-lg">
-        <Button
-          variant="ghost" size="icon"
-          className="h-8 w-8"
-          onClick={() => setSpecPanelVisible(prev => !prev)}
-          title="Toggle Specification"
-        >
-          <Layers className="h-4 w-4" />
-        </Button>
+        {/* 1. Layout mode toggle */}
         <Button
           variant="ghost" size="icon"
           className="h-8 w-8"
@@ -326,6 +365,52 @@ const IndexContent: React.FC = () => {
           title="Back to normal mode"
         >
           <LayoutGrid className="h-4 w-4" />
+        </Button>
+        {/* 2. Layers panel toggle */}
+        <Button
+          variant="ghost" size="icon"
+          className={cn("h-8 w-8", specPanelVisible && "text-primary")}
+          onClick={() => setSpecPanelVisible(prev => !prev)}
+          title="Toggle Specification"
+        >
+          <Layers className="h-4 w-4" />
+        </Button>
+        {/* 3. Export */}
+        <Button
+          variant="ghost" size="icon"
+          className="h-8 w-8"
+          onClick={handleFullscreenExport}
+          disabled={!deferredSpec}
+          title="Export as HTML Canvas"
+        >
+          <Download className="h-4 w-4" />
+        </Button>
+        {/* 4. Edit/Preview toggle */}
+        <Button
+          variant="ghost" size="icon"
+          className={cn("h-8 w-8", fullscreenViewMode === 'preview' && "text-primary")}
+          onClick={() => setFullscreenViewMode(v => v === 'edit' ? 'preview' : 'edit')}
+          title={fullscreenViewMode === 'edit' ? 'Switch to Result Preview' : 'Switch to Edit Mode'}
+        >
+          <Eye className="h-4 w-4" />
+        </Button>
+        {/* 5. Show indices */}
+        <Button
+          variant="ghost" size="icon"
+          className={cn("h-8 w-8", showIndices && "text-primary")}
+          onClick={() => setShowIndices(v => !v)}
+          title="Toggle Indices"
+        >
+          <Hash className="h-4 w-4" />
+        </Button>
+        {/* 6. Show grid */}
+        <Button
+          variant="ghost" size="icon"
+          className={cn("h-8 w-8", showGrid && "text-primary")}
+          onClick={() => setShowGrid(v => !v)}
+          title="Toggle Grid"
+        >
+          <Grid className="h-4 w-4" />
         </Button>
       </div>
 
@@ -347,6 +432,7 @@ const IndexContent: React.FC = () => {
           onTripleTapEmpty={resetAllSets}
           angleStep={angleStep}
           layoutMode="fullscreen"
+          fullscreenViewMode={fullscreenViewMode}
         />
 
         {/* Floating Spec Panel */}

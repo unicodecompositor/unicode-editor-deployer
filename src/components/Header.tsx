@@ -1,9 +1,17 @@
 import React from 'react';
-import { Grid3X3, Layers, Sparkles } from 'lucide-react';
+import { Grid3X3, Layers, Sparkles, Undo2, Redo2 } from 'lucide-react';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { useLocale } from '@/hooks/useLocale';
+import { Button } from '@/components/ui/button';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({ canUndo, canRedo, onUndo, onRedo }) => {
   const { t } = useLocale();
   
   return (
@@ -25,6 +33,32 @@ export const Header: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Undo/Redo */}
+            {onUndo && onRedo && (
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={onUndo}
+                  disabled={!canUndo}
+                  title="Undo (Ctrl+Z)"
+                >
+                  <Undo2 className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={onRedo}
+                  disabled={!canRedo}
+                  title="Redo (Ctrl+Y)"
+                >
+                  <Redo2 className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+
             <div className="hidden md:flex items-center gap-6 text-sm">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Layers className="w-4 h-4" />
