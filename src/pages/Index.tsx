@@ -295,7 +295,7 @@ const IndexContent: React.FC = () => {
 
   const leftToolbar = (position: 'fixed' | 'absolute' = 'absolute') => (
     <div className={cn(
-      position === 'fixed' ? "fixed top-16 left-4 z-40" : "absolute top-2 left-2 z-40",
+      position === 'fixed' ? "fixed top-20 left-4 z-40" : "absolute top-2 left-2 z-40",
       "flex flex-col items-center gap-1 bg-card/80 backdrop-blur-sm rounded-lg border border-border p-1 shadow-lg"
     )}>
       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleSave} title="Save (Download)">
@@ -439,7 +439,7 @@ const IndexContent: React.FC = () => {
       <Header canUndo={history.canUndo} canRedo={history.canRedo} onUndo={handleUndo} onRedo={handleRedo} />
       {leftToolbar('fixed')}
       {/* Floating toolbar top-right under header — all 6 buttons */}
-      <div className="fixed top-16 right-4 z-40 flex items-center gap-1 bg-card/80 backdrop-blur-sm rounded-lg border border-border p-1 shadow-lg">
+      <div className="fixed top-20 right-4 z-40 flex items-center gap-1 bg-card/80 backdrop-blur-sm rounded-lg border border-border p-1 shadow-lg">
         {/* 1. Layout mode toggle */}
         <Button
           variant="ghost" size="icon"
