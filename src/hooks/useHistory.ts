@@ -11,6 +11,9 @@ export function useHistory(initialValue: string) {
   const [current, setCurrent] = useState(initialValue);
   const historyRef = useRef<HistoryState>({ past: [], future: [] });
   const isUndoRedoRef = useRef(false);
+  // Counter to force re-renders when history changes
+  const [, setVersion] = useState(0);
+  const bump = () => setVersion(v => v + 1);
 
   const push = useCallback((value: string) => {
     if (isUndoRedoRef.current) {
@@ -24,6 +27,7 @@ export function useHistory(initialValue: string) {
       const h = historyRef.current;
       h.past = [...h.past, prev].slice(-MAX_HISTORY);
       h.future = []; // clear future on new change
+      bump();
       return value;
     });
   }, []);
@@ -37,6 +41,7 @@ export function useHistory(initialValue: string) {
       h.past = h.past.slice(0, -1);
       h.future = [curr, ...h.future].slice(0, MAX_HISTORY);
       isUndoRedoRef.current = true;
+      bump();
       return previous;
     });
     return previous;
@@ -51,6 +56,7 @@ export function useHistory(initialValue: string) {
       h.future = h.future.slice(1);
       h.past = [...h.past, curr].slice(-MAX_HISTORY);
       isUndoRedoRef.current = true;
+      bump();
       return next;
     });
     return next;

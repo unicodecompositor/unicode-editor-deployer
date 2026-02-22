@@ -10,7 +10,7 @@ import { BlockSelector } from '@/components/BlockSelector';
 import { parseUniComp, parseMultiLine, getRect, stringifySpec } from '@/lib/unicomp-parser';
 import { useLocaleProvider } from '@/hooks/useLocale';
 import { useHistory } from '@/hooks/useHistory';
-import { Layers, PanelRightClose, PanelRightOpen, LayoutGrid, Grid, Hash, Eye, Download } from 'lucide-react';
+import { Layers, PanelRightClose, PanelRightOpen, LayoutGrid, Grid, Hash, Eye, Download, Undo2, Redo2, Copy, ClipboardPaste, Save, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -34,6 +34,7 @@ const IndexContent: React.FC = () => {
   const [selectionSet, setSelectionSet] = useState<number[]>([]);
   const [lockedSet, setLockedSet] = useState<number[]>([]);
   const [hiddenSet, setHiddenSet] = useState<number[]>([]);
+  const [clipboardLayers, setClipboardLayers] = useState<any[]>([]);
 
   const resetAllSets = useCallback(() => {
     setSelectionSet([]);
@@ -66,22 +67,6 @@ const IndexContent: React.FC = () => {
       resetAllSets();
     }
   }, [history, resetAllSets]);
-
-  // Keyboard shortcuts for undo/redo
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        handleUndo();
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
-        e.preventDefault();
-        handleRedo();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [handleUndo, handleRedo]);
 
   const canvasContainerRef = useRef<HTMLDivElement>(null);
 
@@ -167,6 +152,75 @@ const IndexContent: React.FC = () => {
     if (target) toggleSelection(target.index);
   }, [spec, lockedSet, toggleSelection]);
 
+  const handleCopyLayers = useCallback(() => {
+    if (!spec || selectionSet.length === 0) return;
+    const copied = selectionSet
+      .map(idx => spec.symbols[idx])
+      .filter(Boolean)
+      .map(s => JSON.parse(JSON.stringify(s)));
+    setClipboardLayers(copied);
+  }, [spec, selectionSet]);
+
+  const handlePasteLayers = useCallback(() => {
+    if (clipboardLayers.length === 0 || !spec) return;
+    const newSpec = JSON.parse(JSON.stringify(spec));
+    const startIdx = newSpec.symbols.length;
+    newSpec.symbols.push(...clipboardLayers.map((s: any) => ({ ...s })));
+    const newCode = stringifySpec(newSpec);
+    handleCodeChange(newCode);
+    const newSelection = clipboardLayers.map((_: any, i: number) => startIdx + i);
+    setSelectionSet(newSelection);
+  }, [clipboardLayers, spec, handleCodeChange]);
+
+  const handleSave = useCallback(() => {
+    const blob = new Blob([code], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'unicomp-rule.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [code]);
+
+  const handleLoad = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.txt,.unicomp';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = reader.result as string;
+        handleCodeChange(text);
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }, [handleCodeChange]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectionSet.length > 0) {
+        handleCopyLayers();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && clipboardLayers.length > 0) {
+        handlePasteLayers();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleUndo, handleRedo, handleCopyLayers, handlePasteLayers, selectionSet, clipboardLayers]);
+
   useEffect(() => {
     if (multiLineResult && selectedBlockIndex >= multiLineResult.blocks.length) setSelectedBlockIndex(0);
   }, [multiLineResult, selectedBlockIndex]);
@@ -239,11 +293,38 @@ const IndexContent: React.FC = () => {
     />
   );
 
+  const leftToolbar = (position: 'fixed' | 'absolute' = 'absolute') => (
+    <div className={cn(
+      position === 'fixed' ? "fixed top-16 left-4 z-40" : "absolute top-2 left-2 z-40",
+      "flex flex-col items-center gap-1 bg-card/80 backdrop-blur-sm rounded-lg border border-border p-1 shadow-lg"
+    )}>
+      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleSave} title="Save (Download)">
+        <Save className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleLoad} title="Load (Open file)">
+        <FolderOpen className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleUndo} disabled={!history.canUndo} title="Undo (Ctrl+Z)">
+        <Undo2 className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRedo} disabled={!history.canRedo} title="Redo (Ctrl+Y)">
+        <Redo2 className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCopyLayers} disabled={selectionSet.length === 0} title="Copy layers (Ctrl+C)">
+        <Copy className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePasteLayers} disabled={clipboardLayers.length === 0} title="Paste layers (Ctrl+V)">
+        <ClipboardPaste className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+
   // --- NORMAL MODE ---
   if (layoutMode === 'normal') {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background relative">
         <Header canUndo={history.canUndo} canRedo={history.canRedo} onUndo={handleUndo} onRedo={handleRedo} />
+        {leftToolbar('fixed')}
         <main className="container mx-auto px-4 py-8">
           <div className="grid gap-6 grid-cols-1 lg:grid-cols-12">
             {/* Left Column: Editor & Presets */}
@@ -286,8 +367,9 @@ const IndexContent: React.FC = () => {
   // --- SPLIT MODE ---
   if (layoutMode === 'split') {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background relative">
         <Header canUndo={history.canUndo} canRedo={history.canRedo} onUndo={handleUndo} onRedo={handleRedo} />
+        {leftToolbar('fixed')}
         <main className="container mx-auto px-4 py-4">
           <div className={cn(
             "grid gap-4",
@@ -355,6 +437,7 @@ const IndexContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header canUndo={history.canUndo} canRedo={history.canRedo} onUndo={handleUndo} onRedo={handleRedo} />
+      {leftToolbar('fixed')}
       {/* Floating toolbar top-right under header — all 6 buttons */}
       <div className="fixed top-16 right-4 z-40 flex items-center gap-1 bg-card/80 backdrop-blur-sm rounded-lg border border-border p-1 shadow-lg">
         {/* 1. Layout mode toggle */}
